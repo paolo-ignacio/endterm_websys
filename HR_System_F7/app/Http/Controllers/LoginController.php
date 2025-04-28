@@ -30,7 +30,7 @@ class LoginController extends Controller
                 $user = DB::table('admin')->where('email', $request->email)->first();
                 if($user && Hash::check($request->password, $user->password)){
                     Auth::loginUsingId($user->id);
-                    return redirect()->route('admin.dashboard');
+                    return redirect()->route('employees.index');
                 }
                 return back()->withErrors(['email' =>'Invalid Credentials']);
     }
