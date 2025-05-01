@@ -11,11 +11,25 @@ class EmployeeController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        //
-        $employees = Employee::all();
-        return view('employees.index', compact('employees'));
+        $query = Employee::query();
+
+        if ($request->filled('classification')) {
+            $query->where('classification', $request->classification);
+        }
+
+        if ($request->filled('college')) {
+            $query->where('college', $request->college);
+        }
+
+        $employees = $query->paginate(10)->appends($request->query());
+
+        // Get unique classifications and colleges for filter dropdowns
+        $classifications = Employee::select('classification')->distinct()->pluck('classification');
+        $colleges = Employee::select('college')->distinct()->pluck('college');
+
+        return view('employees.index', compact('employees', 'classifications', 'colleges'));
     }
 
     /**
