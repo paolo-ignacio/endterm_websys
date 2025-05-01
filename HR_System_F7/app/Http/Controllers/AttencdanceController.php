@@ -6,7 +6,7 @@ use App\Models\Attencdance;
 use Illuminate\Http\Request;
 use App\Models\Employee;
 use Carbon\Carbon;
-
+use Illuminate\Pagination\LengthAwarePaginator;
 class AttencdanceController extends Controller
 {
     public function store(Request $request)
@@ -18,44 +18,35 @@ class AttencdanceController extends Controller
             return response()->json(['message' => 'Employee not found'], 404);
         }
 
-        // Get today's date in local timezone (Philippine Time)
         $today = Carbon::today('Asia/Manila');
-        $now = Carbon::now('Asia/Manila');  // Get current time in Philippine Time
+        $now = Carbon::now('Asia/Manila');
         $hour = $now->hour;
 
-        // Fetch or create today's attendance
         $attendance = Attencdance::firstOrCreate([
             'employee_id' => $employee->id,
             'date' => $today
         ]);
 
-        // Check if it's after 5 PM and if both AM and PM time-in/out are null
         if ($hour >= 17 && !$attendance->am_time_in && !$attendance->am_time_out && !$attendance->pm_time_in && !$attendance->pm_time_out) {
-            // Don't save anything if logged in after 5 PM and no session times are recorded
             return response()->json(['message' => 'Attendance recording is closed for today.'], 400);
         }
 
         if ($hour < 12) {
-            // Morning session
             if (!$attendance->am_time_in) {
-                $attendance->am_time_in = $now;  // Save Carbon instance directly
+                $attendance->am_time_in = $now;
             } elseif (!$attendance->am_time_out) {
-                $attendance->am_time_out = $now;  // Save Carbon instance directly
+                $attendance->am_time_out = $now;
             }
         } else {
-            // Afternoon session
-
-            // If the employee forgot to log out in the morning
             if ($attendance->am_time_in && !$attendance->am_time_out) {
-                // Automatically fill out missing fields in local time
-                $attendance->am_time_out = Carbon::createFromTime(12, 0, 0, 'Asia/Manila'); // 12:00 PM
-                $attendance->pm_time_in = Carbon::createFromTime(13, 0, 0, 'Asia/Manila');  // 1:00 PM
+                $attendance->am_time_out = Carbon::createFromTime(12, 0, 0, 'Asia/Manila');
+                $attendance->pm_time_in = Carbon::createFromTime(13, 0, 0, 'Asia/Manila');
             }
 
             if (!$attendance->pm_time_in) {
-                $attendance->pm_time_in = $now;  // Save Carbon instance directly
+                $attendance->pm_time_in = $now;
             } elseif (!$attendance->pm_time_out) {
-                $attendance->pm_time_out = $now;  // Save Carbon instance directly
+                $attendance->pm_time_out = $now;
             }
         }
 
@@ -68,7 +59,7 @@ class AttencdanceController extends Controller
                 'id_number' => $employee->id_number,
                 'classification' => $employee->classification,
                 'college' => $employee->college,
-                'picture_path' => asset('storage/' . $employee->picture), // Adjust based on how you're storing images
+                'picture_path' => asset('storage/' . $employee->picture),
             ],
             'attendance' => [
                 'am_time_in' => optional($attendance->am_time_in)->format('h:i A'),
@@ -77,5 +68,140 @@ class AttencdanceController extends Controller
                 'pm_time_out' => optional($attendance->pm_time_out)->format('h:i A'),
             ]
         ]);
+    }
+
+    public function viewMonthlyReport(Request $request)
+    {
+        $role = $request->input('role');
+        $month = $request->input('month', 4); // Default to April if no month is selected
+    
+        $employees = Employee::when($role, function ($query, $role) {
+            return $query->where('classification', $role);
+        })->get();
+    
+        $attendanceData = [];
+    
+        foreach ($employees as $employee) {
+            $attendances = Attencdance::where('employee_id', $employee->id)
+                ->whereMonth('date', $month)
+                ->get();
+    
+            $totalUndertimeMinutes = 0;
+            $absentDates = [];
+    
+            foreach ($attendances as $attendance) {
+                $totalUndertimeMinutes += $this->calculateUndertime($attendance);
+                if ($this->calculateAbsence($attendance)) {
+                    $absentDates[] = \Carbon\Carbon::parse($attendance->date)->toDateString();
+                }
+            }
+    
+            $absenceRanges = $this->formatAbsenceDates($absentDates);
+    
+            $attendanceData[] = [
+                'name' => $employee->name,
+                'undertime' => $this->formatMinutesToHoursMinutes($totalUndertimeMinutes),
+                'absences' => $absenceRanges
+            ];
+        }
+    
+        // ✅ PAGINATION FOR ARRAY DATA
+        $page = $request->input('page', 1);
+        $perPage = 10;
+        $collection = collect($attendanceData);
+        $paginatedRecords = new LengthAwarePaginator(
+            $collection->forPage($page, $perPage),
+            $collection->count(),
+            $perPage,
+            $page,
+            ['path' => $request->url(), 'query' => $request->query()]
+        );
+    
+        return view('scan.dtr', ['records' => $paginatedRecords]);
+    }
+    private function calculateUndertime($attendance)
+    {
+        // ✅ If fully absent, no undertime should be counted
+        if (
+            !$attendance->am_time_in && !$attendance->am_time_out &&
+            !$attendance->pm_time_in && !$attendance->pm_time_out
+        ) {
+            return 0;
+        }
+    
+        $totalUndertime = 0;
+    
+        // AM session
+        if ($attendance->am_time_in && $attendance->am_time_out) {
+            $amStart = Carbon::parse($attendance->am_time_in);
+            $amEnd = Carbon::parse($attendance->am_time_out);
+            $workedMinutes = $amStart->diffInMinutes($amEnd);
+            $undertime = max(0, 240 - $workedMinutes);
+            $totalUndertime += $undertime;
+        } elseif ($attendance->am_time_in || $attendance->am_time_out) {
+            // Partial scan = full AM undertime
+            $totalUndertime += 240;
+        }
+    
+        // PM session
+        if ($attendance->pm_time_in && $attendance->pm_time_out) {
+            $pmStart = Carbon::parse($attendance->pm_time_in);
+            $pmEnd = Carbon::parse($attendance->pm_time_out);
+            $workedMinutes = $pmStart->diffInMinutes($pmEnd);
+            $undertime = max(0, 240 - $workedMinutes);
+            $totalUndertime += $undertime;
+        } elseif ($attendance->pm_time_in || $attendance->pm_time_out) {
+            // Partial scan = full PM undertime
+            $totalUndertime += 240;
+        }
+    
+        return $totalUndertime;
+    }
+    private function calculateAbsence($attendance)
+    {
+        return !$attendance->am_time_in && !$attendance->am_time_out &&
+               !$attendance->pm_time_in && !$attendance->pm_time_out;
+    }
+
+    private function formatMinutesToHoursMinutes($minutes)
+    {
+        if ($minutes === 0) {
+        return '';
+    }
+        $hours = floor($minutes / 60);
+        $mins = $minutes % 60;
+        return "{$hours} hrs. & {$mins} mins";
+    }
+
+    private function formatAbsenceDates(array $dates)
+    {
+        if (empty($dates)) return null;
+
+        sort($dates);
+        $ranges = [];
+        $start = $end = Carbon::parse($dates[0]);
+
+        for ($i = 1; $i < count($dates); $i++) {
+            $current = Carbon::parse($dates[$i]);
+
+            if ($current->diffInDays($end) == 1) {
+                $end = $current;
+            } else {
+                $ranges[] = $this->formatRange($start, $end);
+                $start = $end = $current;
+            }
+        }
+
+        $ranges[] = $this->formatRange($start, $end);
+        return implode(', ', $ranges);
+    }
+
+    private function formatRange($start, $end)
+    {
+        if ($start->equalTo($end)) {
+            return $start->format('M. j, Y');
+        } else {
+            return $start->format('M. j') . '–' . $end->format('j, Y');
+        }
     }
 }

@@ -16,3 +16,7 @@ Route::get('employees/{id}/download-qr', [EmployeeController::class, 'downloadQr
 
 Route::view('/scan', 'scan.scanView');
 Route::post('/save-attendance', [AttencdanceController::class, 'store']);
+
+
+Route::get('/monthly-report', [AttencdanceController::class, 'viewMonthlyReport']);
+Route::get('/attendance/report', [AttencdanceController::class, 'viewMonthlyReport'])->name('attendance.report');

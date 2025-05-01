@@ -156,7 +156,6 @@ class EmployeeController extends Controller
     // Generate the QR code
    
     $qrCode = QrCode::size(200)->generate(json_encode([
-        'id' => $employee->id,
         'name' => $employee->name,
         'id_number' => $employee->id_number,
         'college' => $employee->college,
@@ -170,5 +169,5 @@ class EmployeeController extends Controller
     return response($qrCode)
         ->header('Content-Type', 'image/png')
         ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
-}
+    }
 }

@@ -6,7 +6,7 @@
     <title>Document</title>
 </head>
 <body>
-<h1 class="mb-4">Student List</h1>
+<h1 class="mb-4">Employees Record</h1>
 
 @if (session('success'))
     <div class="alert alert-success">
