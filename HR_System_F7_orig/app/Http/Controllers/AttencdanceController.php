@@ -59,7 +59,7 @@ class AttencdanceController extends Controller
                 'id_number' => $employee->id_number,
                 'classification' => $employee->classification,
                 'college' => $employee->college,
-                'picture_path' => asset('storage/' . $employee->picture),
+                'picture_path' => asset('images/' . $employee->picture),
             ],
             'attendance' => [
                 'am_time_in' => optional($attendance->am_time_in)->format('h:i A'),

@@ -6,7 +6,7 @@
     <title>Document</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600&display=swap" rel="stylesheet">
     <style>
-            * {
+              * {
                 margin: 0;
                 padding: 0;
                 box-sizing: border-box;
@@ -151,6 +151,7 @@
                 bottom: 20px;
                 left: 20px;
             }
+
 
     </style>
 </head>

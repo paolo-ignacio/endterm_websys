@@ -51,7 +51,8 @@ class EmployeeController extends Controller
             'id_number' => 'required|string|max:255|unique:employees,id_number',
             'college' => 'required|string',
             'classification' => 'required|string',   
-            'picture' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+           
+            'picture' => 'required|image|mimes:jpeg,jpg,png,gif|max:2048',
              // accepts only images up to 2MB
         ]);
     
@@ -59,7 +60,7 @@ class EmployeeController extends Controller
         if ($request->hasFile('picture')) {
             $file = $request->file('picture');
             $filename = time() . '_' . $file->getClientOriginalName(); // e.g. 1714355344_profilepic.jpg
-            $filepath = $file->storeAs('uploads', $filename, 'public'); // store to storage/app/public/uploads
+            $file->move(public_path('images'), $filename); // store to storage/app/public/uploads
         }
     
         // Create the record
@@ -68,7 +69,7 @@ class EmployeeController extends Controller
         $person->id_number = $request->id_number;
         $person->college = $request->college;
         $person->classification = $request->classification;
-        $person->picture = $filepath; // save only the relative path
+        $person->picture = $file; // save only the relative path
         $person->save();
  
   
@@ -108,40 +109,42 @@ class EmployeeController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'id_number' => 'required|string|max:255|unique:employees,id_number,' . $id, // Allow the current id to remain unique
+            'id_number' => 'required|string|max:255|unique:employees,id_number,' . $id,
             'college' => 'required|string',
-            'classification' => 'required|string',   
-            'picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048', // Make picture optional
+            'classification' => 'required|string',
+            'picture' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+            
         ]);
     
         $employee = Employee::findOrFail($id);
-        
-        // Store the old image path for deletion
+    
         $oldImagePath = $employee->picture;
     
-        // Handle new image upload if a new file is provided
         if ($request->hasFile('picture')) {
-            // Delete the old image if it exists
-            if ($oldImagePath && Storage::exists('public/' . $oldImagePath)) {
-                Storage::delete('public/' . $oldImagePath);
+            // Delete old image if it exists
+            if ($oldImagePath && file_exists(public_path('images/' . $oldImagePath))) {
+                unlink(public_path('images/' . $oldImagePath));
             }
+        
+      
     
-            // Handle the new file upload
             $file = $request->file('picture');
-            $filename = time() . '_' . $file->getClientOriginalName(); 
-            $filepath = $file->storeAs('uploads', $filename, 'public');
+            $filename = time() . '_' . $file->getClientOriginalName();
+            $file->move(public_path('images'), $filename);
+    
+            // ✅ Save new path
+            $filepath = $filename;
         } else {
-            // If no new image is uploaded, keep the old image path
+            // ✅ Keep old path
             $filepath = $oldImagePath;
         }
     
-        // Update the employee data
         $employee->update([
             'name' => $request->name,
             'id_number' => $request->id_number,
             'college' => $request->college,
             'classification' => $request->classification,
-            'picture' => $filepath, // Save the updated image path
+            'picture' => $filepath, // ✅ Correctly stores either new or old
         ]);
     
         return redirect()
@@ -163,25 +166,25 @@ class EmployeeController extends Controller
         return redirect()->route('employees.index')->with('success', 'Employee data deleted!');
     }
 
-    public function downloadQrCode($id)
+   
+public function downloadQrCode($id)
 {
     $employee = Employee::findOrFail($id);
 
-    // Generate the QR code
-   
-    $qrCode = QrCode::size(200)->generate(json_encode([
-        'name' => $employee->name,
-        'id_number' => $employee->id_number,
-        'college' => $employee->college,
-        'classification' => $employee->classification,
-        'picture' => $employee->picture,
-    ]));
-    // Define the file name for the QR code image
+    $qrCode = QrCode::format('png') // Make sure it's a PNG
+        ->size(200)
+        ->generate(json_encode([
+            'name' => $employee->name,
+            'id_number' => $employee->id_number,
+            'college' => $employee->college,
+            'classification' => $employee->classification,
+            'picture' => $employee->picture,
+        ]));
+
     $fileName = 'qr_code_' . $employee->id_number . '.png';
 
-    // Store the QR code as an image and return the response to download it
     return response($qrCode)
         ->header('Content-Type', 'image/png')
         ->header('Content-Disposition', 'attachment; filename="' . $fileName . '"');
-    }
+}
 }
